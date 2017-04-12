@@ -17,7 +17,6 @@ $(function(){
     event.preventDefault();
     $("svg").remove();
 
-
     nSteps = $("#nSteps").val();
 
     generatePenroseTiling();
