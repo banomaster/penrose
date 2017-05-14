@@ -1,4 +1,7 @@
-var w,h,center,scale, gr, nSteps, svg;
+var w,h,center,scale, gr, nSteps, svg, triangles, outerPaths, numOfAddedTriangles;
+var drawArcsEnabled = true;
+var CONST = 5;
+var PI = Math.PI;
 
 if (!String.prototype.format) {
   String.prototype.format = function() {
@@ -33,7 +36,40 @@ $(function(){
 
     generatePenroseTiling();
   });
+
+  $("#undo").click(undoNewTriangle);
+
+  $("#drawArcs").bind('change', function(){        
+    drawArcsEnabled = this.checked;
+    d3.selectAll(".arcs").remove();
+
+    if (drawArcsEnabled) {
+      drawArcs(triangles);
+    }
+  });
+
+  $("#mirrorTriangles").bind('change', function() {
+    mirrorTriangles = this.checked;
+    $("svg").remove();
+    generatePenroseTiling();
+
+  });
 });
+
+var rotateVector = function(vec, ang) {
+    ang = -ang * (PI/180);
+    var cos = Math.cos(ang);
+    var sin = Math.sin(ang);
+    return [vec[0] * cos - vec[1] * sin, vec[0] * sin + vec[1] * cos];
+};
+
+function toPolar(x) {
+  return x * 2 * PI / 360;
+}
+
+function computeDistance(A,B) {
+  return ((B.x - A.x)**2 + (B.y - A.y)**2)**(1/2);
+}
 
 function sumOfPoints(A, B) {
   return {x: A.x + B.x, y: A.y + B.y}
@@ -145,9 +181,126 @@ function subdivide(triangles) {
   return newTriangles
 }
 
-function generatePenroseTiling() {
-  
-  var v =  (w / 2) * Math.tan(36 * Math.PI / 180);
+function computeOuterPaths(triangles, updateTriangles = true) {
+  var outerPaths = [];
+  triangles.forEach(function(t) {
+    Object.keys(t.edges).forEach(function(edge) {
+      if (!t.edges[edge]) {
+        return;
+      }
+
+      var newOuterLine;
+      switch(edge) {
+        case "AB":
+          newOuterLine = {line: [t.points.A, t.points.B], lineType: "AB", t: t};
+          break;
+        case "BC":
+          newOuterLine = {line: [t.points.B, t.points.C], lineType: "BC", t: t};
+          break;
+        case "AC":
+          newOuterLine = {line: [t.points.A, t.points.C], lineType: "AC", t: t};
+          break;
+      }
+      
+      var element = outerPaths.find(function(oldOuteLine) {
+        return (Math.abs(oldOuteLine.line[0].x - newOuterLine.line[0].x) < CONST && Math.abs(oldOuteLine.line[1].x - newOuterLine.line[1].x) < CONST && Math.abs(oldOuteLine.line[0].y - newOuterLine.line[0].y) < CONST && Math.abs(oldOuteLine.line[1].y - newOuterLine.line[1].y) < CONST) 
+        || (Math.abs(oldOuteLine.line[1].x - newOuterLine.line[0].x) < CONST && Math.abs(oldOuteLine.line[0].x - newOuterLine.line[1].x) < CONST && Math.abs(oldOuteLine.line[1].y - newOuterLine.line[0].y) < CONST && Math.abs(oldOuteLine.line[0].y - newOuterLine.line[1].y) < CONST)
+      });
+
+      if (element) {
+        if (updateTriangles) {
+          element.t.edges[element.lineType] = false;
+          t.edges[newOuterLine.lineType] = false;
+        }
+        var index = outerPaths.indexOf(element);
+        if(index != -1)
+            outerPaths.splice( index, 1 );
+      } else {
+        outerPaths.push(newOuterLine);
+      }
+    });
+  });
+  return outerPaths;
+}
+
+function computeNewTriangle(outerEdge, newType = 0) {
+  var distance, A = {}, B = {}, C = {};
+  var points = outerEdge.t.points;
+
+  var vecAB = [points.B.x - points.A.x, points.B.y - points.A.y]
+  var vecAC = [points.C.x - points.A.x, points.C.y - points.A.y]
+
+  var vecBA = [points.A.x - points.B.x, points.A.y - points.B.y]
+  var vecBC = [points.C.x - points.B.x, points.C.y - points.B.y]
+
+  // var vecCA = [points.A.x - points.C.x, points.A.y - points.C.y]
+  // var vecCB = [points.B.x - points.C.x, points.B.y - points.C.y]
+
+  var angleAC_AB = Math.atan2(vecAC[1], vecAC[0]) - Math.atan2(vecAB[1], vecAB[0]);
+  if (angleAC_AB < 0) angleAC_AB += 2 * PI;
+
+  var angleBA_BC = Math.atan2(vecBA[1], vecBA[0]) - Math.atan2(vecBC[1], vecBC[0]);
+  if (angleAC_AB < 0) angleAC_AB += 2 * PI;
+
+  var rotatingAngle = newType == 0 ? 36 : 108;
+
+  if (outerEdge.t.type == 0) {
+    switch(outerEdge.lineType) {
+      case "AB":
+        newVec = rotateVector(vecAB, angleAC_AB > PI ? 360 - rotatingAngle : rotatingAngle);
+        
+        B.x = newVec[0] + outerEdge.t.points.A.x;
+        B.y = newVec[1] + outerEdge.t.points.A.y;
+
+        return newTriangle(newType, points.A, points.B, B, {AB: true, BC: false, AC: true})
+      case "AC":
+        newVec = rotateVector(vecAC, angleAC_AB < PI ? 360 - rotatingAngle : rotatingAngle);
+        
+        B.x = newVec[0] + outerEdge.t.points.A.x;
+        B.y = newVec[1] + outerEdge.t.points.A.y;
+
+        return newTriangle(newType, points.A, B, points.C, {AB: true, BC: false, AC: true})
+
+    }
+  } else {
+    switch(outerEdge.lineType) {
+      case "AB":
+        newVec = rotateVector(vecAB, angleAC_AB > PI ? 360 - rotatingAngle : rotatingAngle);
+        
+        B.x = newVec[0] + outerEdge.t.points.A.x;
+        B.y = newVec[1] + outerEdge.t.points.A.y;
+
+        return newTriangle(newType, points.A, points.B, B, {AB: true, BC: false, AC: true})
+      case "AC":
+
+        newVec = rotateVector(vecAC, angleAC_AB < PI ? 360 - rotatingAngle : rotatingAngle);
+        
+        C.x = newVec[0] + outerEdge.t.points.A.x;
+        C.y = newVec[1] + outerEdge.t.points.A.y;
+
+        return newTriangle(newType, points.A, C, points.C, {AB: true, BC: false, AC: true})
+
+    }
+  }
+}
+
+function undoNewTriangle() {
+  if (numOfAddedTriangles == 0) return;
+
+  d3.selectAll('.triangles-' + numOfAddedTriangles).remove();
+  d3.selectAll('path').remove();
+  triangles.splice(-2,2);
+
+  numOfAddedTriangles -= 1;
+
+  outerPaths = computeOuterPaths(triangles, false);
+  drawArcs(triangles);
+  drawOuterPaths(outerPaths);
+}
+
+function initialTriangles() {
+  var v =  (w / 2) * Math.tan(36 * PI / 180);
+
   var triangles = [{
     type: 1,
     points: {
@@ -174,67 +327,22 @@ function generatePenroseTiling() {
     }
   }]
 
-  var points = []
-
-  for(i = 0; i < nSteps; i++) {
-    triangles = subdivide(triangles);
-    var mirroredTriangles = []
-    triangles.forEach(function(t) {
-      if (!t.edges.BC) {
-        return;
-      }
-
-      var p = t.points;
-      var P = reflect(p.A, p.B, p.C);
-      mirroredTriangles.push(newTriangle(t.type, P, p.B, p.C, {AB: true, BC: false, AC: true}));
-    });
-    
-    triangles = triangles.concat(mirroredTriangles);
-  }
-
   triangles.map(function(t) {
     t.points = scalePoints(t.points);
     return t 
   });
 
-  $('body').append('<div id="viz"></div>');
+  return triangles;
+}
 
-  svg = d3.select("#viz").append("svg")
-        .attr("width", w)
-        .attr("height", h);
-
-  var pi = Math.PI;
-    
-  var arc = d3.svg.arc()
-      .innerRadius(50)
-      .outerRadius(70)
-      .startAngle(45 * (pi/180)) //converting from degs to radians
-      .endAngle(3) //just radians
- 
-  svg.selectAll()
-    .data(triangles)
-    .enter().append("polygon")
-    .attr("points",function(d) {
-        return Object.keys(d.points).map(function(key) {
-          return [d.points[key].x,d.points[key].y].join(","); 
-        }).join(" ");
-    })
-    .style('stroke', 'black')
-    .style('stroke-width', '0.5')
-    .attr("fill", function(d) {
-      if (d.type == 0) {
-        return "red";
-      } else {
-        return "blue";
-      }
-    })
-
+function drawArcs(triangles) {
   svg.selectAll()
     .data(triangles)
     .enter().append("path")
     .attr("d", function(t) {
       return getArc(t, 0)
     })
+    .attr("class","arcs")
     .attr("fill", "none")
     .style('stroke', 'green')
     .style('stroke-width', '2')
@@ -245,8 +353,119 @@ function generatePenroseTiling() {
     .attr("d", function(t) {
       return getArc(t, 1)
     })
+    .attr("class","arcs")
     .attr("fill", "none")
     .style('stroke', 'yellow')
     .style('stroke-width', '2')
+}
 
+function drawOuterPaths(outerPaths) {
+  d3.selectAll('.outerPaths').remove();
+
+  var line = d3.svg.line()
+    .x(function(d) { return d.x; })
+    .y(function(d) { return d.y; });
+
+  svg.selectAll()
+    .data(outerPaths)
+    .enter().append('path')
+    .attr('class','outerPaths')
+    .attr('d', function(d) { return line(d.line); })
+    .attr('stroke-width', function(d) { return 3; })
+    .attr('stroke', 'orange')
+    .on("mouseover", function (d) {
+      d3.select(this).attr('stroke-width', 6);
+    })
+    .on("mouseout", function(d) {
+      d3.select(this).attr('stroke-width', 3);
+    })
+    .on("click", handleOnEdgeClick)
+}
+
+function drawTriangles(triangles) {
+  svg.selectAll()
+    .data(triangles)
+    .enter().append("polygon")
+    .attr("points",function(d) {
+        return Object.keys(d.points).map(function(key) {
+          return [d.points[key].x,d.points[key].y].join(","); 
+        }).join(" ");
+    })
+    .attr("class", "triangles-" + numOfAddedTriangles)
+    .style('stroke', 'black')
+    .style('stroke-width', '0.5')
+    .attr("fill", function(d) {
+      if (d.type == 0) {
+        return "red";
+      } else {
+        return "blue";
+      }
+    })
+}
+
+function handleOnEdgeClick(d) {
+  numOfAddedTriangles += 1;
+
+  d3.select(this).remove();
+
+  var newType = $('input[name=newType]:checked').val();
+  t = computeNewTriangle(d, newType);
+
+  if (!t) {
+    return;
+  }
+
+  var P = reflect(t.points.A, t.points.B, t.points.C);
+
+  var newTriangles = [t, newTriangle(t.type, P, t.points.B, t.points.C, {AB: true, BC: false, AC: true})];
+
+  triangles = triangles.concat(newTriangles);
+
+  drawTriangles(newTriangles);
+  drawArcs(newTriangles);
+  outerPaths = computeOuterPaths(triangles, false);
+  drawOuterPaths(outerPaths);
+}
+
+function generatePenroseTiling() {
+  numOfAddedTriangles = 0;
+  
+  triangles = initialTriangles();
+  outerPaths = computeOuterPaths(triangles);
+
+  for(i = 0; i < nSteps; i++) {
+    triangles = subdivide(triangles);
+
+    if (mirrorTriangles) {
+      var mirroredTriangles = []
+      triangles.forEach(function(t) {
+        if (!t.edges.BC) {
+          return;
+        }
+        t.edges.BC = false;
+
+        var p = t.points;
+        var P = reflect(p.A, p.B, p.C);
+        mirroredTriangles.push(newTriangle(t.type, P, p.B, p.C, {AB: true, BC: false, AC: true}));
+      });
+      triangles = triangles.concat(mirroredTriangles);
+
+      outerPaths = computeOuterPaths(triangles);
+    }
+  }
+
+  $('body').append('<div id="viz"></div>');
+
+  svg = d3.select("#viz").append("svg")
+        .attr("width", w)
+        .attr("height", h);
+ 
+  
+  drawTriangles(triangles);
+  drawArcs(triangles);
+  
+  if (mirrorTriangles) {
+    drawOuterPaths(outerPaths);
+  }
+  
 }
