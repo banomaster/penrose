@@ -98,13 +98,13 @@ function getArc(t, type) {
 
   var D = sumOfPoints(diffOfPoints(A, B), C)
   if (type == 0) {
-    return getArcD(A, B, D)
+    return getArcD(A, B, D, type)
   } else {
-    return getArcD(C, B, D)
+    return getArcD(C, B, D, type)
   }
 }
 
-function getArcD(U, V, W) {
+function getArcD(U, V, W, type) {
   var start = multOfPoint(sumOfPoints(U,V),0.5)
   var UN = diffOfPoints(sumOfPoints(V,W),multOfPoint(U, 2))
 
@@ -115,11 +115,23 @@ function getArcD(U, V, W) {
   var US = diffOfPoints(start, U)
   var UE = diffOfPoints(end, U)
 
-  if (crossPoints(US, UE) > 0) {
-    start = end
-    end = multOfPoint(sumOfPoints(U,V),0.5)
+  if (type == 1) {
+    r = absOfPoint(multOfPoint(diffOfPoints(V, U), 0.25))
+
+    start = sumOfPoints(U, multOfPoint(US, 0.5))
+    end = sumOfPoints(U, multOfPoint(UE,0.5))
+    
+    if (crossPoints(US, UE) > 0) {
+      start = end 
+      end = sumOfPoints(U, multOfPoint(diffOfPoints(V,U),0.25))
+    }
+  } else {    
+    if (crossPoints(US, UE) > 0) {
+      start = end 
+      end = multOfPoint(sumOfPoints(U,V),0.5)
+    }
   }
-  
+
   return "M {0} {1} A {2} {3} 0 0 0 {4} {5}".format(start.x, start.y,
                                               r, r, end.x, end.y)
 }
@@ -344,7 +356,7 @@ function drawArcs(triangles) {
     })
     .attr("class","arcs")
     .attr("fill", "none")
-    .style('stroke', 'green')
+    .style('stroke', 'yellow')
     .style('stroke-width', '2')
 
   svg.selectAll()
@@ -355,7 +367,7 @@ function drawArcs(triangles) {
     })
     .attr("class","arcs")
     .attr("fill", "none")
-    .style('stroke', 'yellow')
+    .style('stroke', 'green')
     .style('stroke-width', '2')
 }
 
