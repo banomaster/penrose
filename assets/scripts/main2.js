@@ -1,5 +1,7 @@
 var w,h,center,scale, gr, nSteps, svg, triangles, outerPaths, numOfAddedTriangles;
-var drawArcsEnabled = true;
+var drawArcsEnabled = false;
+var mirrorTriangles = false;
+
 var CONST = 5;
 var PI = Math.PI;
 
@@ -98,13 +100,13 @@ function getArc(t, type) {
 
   var D = sumOfPoints(diffOfPoints(A, B), C)
   if (type == 0) {
-    return getArcD(A, B, D, type)
+    return getArcD(A, B, D, type, t.type)
   } else {
-    return getArcD(C, B, D, type)
+    return getArcD(C, B, D, type, t.type)
   }
 }
 
-function getArcD(U, V, W, type) {
+function getArcD(U, V, W, type, tType) {
   var start = multOfPoint(sumOfPoints(U,V),0.5)
   var UN = diffOfPoints(sumOfPoints(V,W),multOfPoint(U, 2))
 
@@ -115,7 +117,7 @@ function getArcD(U, V, W, type) {
   var US = diffOfPoints(start, U)
   var UE = diffOfPoints(end, U)
 
-  if (type == 1) {
+  if (type == 1 || tType == 0) {
     r = absOfPoint(multOfPoint(diffOfPoints(V, U), 0.25))
 
     start = sumOfPoints(U, multOfPoint(US, 0.5))
@@ -125,11 +127,17 @@ function getArcD(U, V, W, type) {
       start = end 
       end = sumOfPoints(U, multOfPoint(diffOfPoints(V,U),0.25))
     }
-  } else {    
+  } else {
+    r = absOfPoint(multOfPoint(diffOfPoints(V, U), 0.75))
+
+    start = sumOfPoints(U, multOfPoint(US, 1.5))
+    end = sumOfPoints(U, multOfPoint(UE, 1.5))
+    
     if (crossPoints(US, UE) > 0) {
       start = end 
-      end = multOfPoint(sumOfPoints(U,V),0.5)
+      end = sumOfPoints(U, multOfPoint(diffOfPoints(V,U),0.75))
     }
+  
   }
 
   return "M {0} {1} A {2} {3} 0 0 0 {4} {5}".format(start.x, start.y,
@@ -252,19 +260,28 @@ function computeNewTriangle(outerEdge, newType = 0) {
   if (angleAC_AB < 0) angleAC_AB += 2 * PI;
 
   var angleBA_BC = Math.atan2(vecBA[1], vecBA[0]) - Math.atan2(vecBC[1], vecBC[0]);
-  if (angleAC_AB < 0) angleAC_AB += 2 * PI;
+  if (angleBA_BC < 0) angleBA_BC += 2 * PI;
 
   var rotatingAngle = newType == 0 ? 36 : 108;
 
   if (outerEdge.t.type == 0) {
     switch(outerEdge.lineType) {
       case "AB":
-        newVec = rotateVector(vecAB, angleAC_AB > PI ? 360 - rotatingAngle : rotatingAngle);
-        
-        B.x = newVec[0] + outerEdge.t.points.A.x;
-        B.y = newVec[1] + outerEdge.t.points.A.y;
+        if (newType == 1) {
+          newVec = rotateVector(vecBA, angleBA_BC < PI ? 360 - rotatingAngle : rotatingAngle);
+          
+          B.x = newVec[0] + outerEdge.t.points.B.x;
+          B.y = newVec[1] + outerEdge.t.points.B.y;
 
-        return newTriangle(newType, points.A, points.B, B, {AB: true, BC: false, AC: true})
+          return newTriangle(newType, points.B, points.A, B, {AB: true, BC: false, AC: true})
+        } else {
+          newVec = rotateVector(vecAB, angleAC_AB > PI ? 360 - rotatingAngle : rotatingAngle);
+          
+          B.x = newVec[0] + outerEdge.t.points.A.x;
+          B.y = newVec[1] + outerEdge.t.points.A.y;
+
+          return newTriangle(newType, points.A, points.B, B, {AB: true, BC: false, AC: true})
+        }
       case "AC":
         newVec = rotateVector(vecAC, angleAC_AB < PI ? 360 - rotatingAngle : rotatingAngle);
         
@@ -272,17 +289,25 @@ function computeNewTriangle(outerEdge, newType = 0) {
         B.y = newVec[1] + outerEdge.t.points.A.y;
 
         return newTriangle(newType, points.A, B, points.C, {AB: true, BC: false, AC: true})
-
     }
   } else {
     switch(outerEdge.lineType) {
       case "AB":
-        newVec = rotateVector(vecAB, angleAC_AB > PI ? 360 - rotatingAngle : rotatingAngle);
-        
-        B.x = newVec[0] + outerEdge.t.points.A.x;
-        B.y = newVec[1] + outerEdge.t.points.A.y;
+        if (newType == 0) {
+          console.log("NEW RED")
+          newVec = rotateVector(vecBA, angleBA_BC < PI ? 360 - 36 : 36);
+          B.x = newVec[0] + outerEdge.t.points.B.x;
+          B.y = newVec[1] + outerEdge.t.points.B.y;
 
-        return newTriangle(newType, points.A, points.B, B, {AB: true, BC: false, AC: true})
+          return newTriangle(newType, points.B, points.A, B, {AB: true, BC: false, AC: true})
+        } else {
+          newVec = rotateVector(vecAB, angleAC_AB > PI ? 360 - rotatingAngle : rotatingAngle);
+      
+          B.x = newVec[0] + outerEdge.t.points.A.x;
+          B.y = newVec[1] + outerEdge.t.points.A.y;
+
+          return newTriangle(newType, points.A, points.B, B, {AB: true, BC: false, AC: true})
+        }
       case "AC":
 
         newVec = rotateVector(vecAC, angleAC_AB < PI ? 360 - rotatingAngle : rotatingAngle);
@@ -357,7 +382,7 @@ function drawArcs(triangles) {
     .attr("class","arcs")
     .attr("fill", "none")
     .style('stroke', 'yellow')
-    .style('stroke-width', '2')
+    .style('stroke-width', '6')
 
   svg.selectAll()
     .data(triangles)
@@ -368,7 +393,7 @@ function drawArcs(triangles) {
     .attr("class","arcs")
     .attr("fill", "none")
     .style('stroke', 'green')
-    .style('stroke-width', '2')
+    .style('stroke-width', '6')
 }
 
 function drawOuterPaths(outerPaths) {
@@ -405,7 +430,7 @@ function drawTriangles(triangles) {
     })
     .attr("class", "triangles-" + numOfAddedTriangles)
     .style('stroke', 'black')
-    .style('stroke-width', '0.5')
+    .style('stroke-width', '0.1')
     .attr("fill", function(d) {
       if (d.type == 0) {
         return "red";
@@ -474,7 +499,10 @@ function generatePenroseTiling() {
  
   
   drawTriangles(triangles);
-  drawArcs(triangles);
+  
+  if (drawArcsEnabled) {
+    drawArcs(triangles);
+  }
   
   if (mirrorTriangles) {
     drawOuterPaths(outerPaths);
